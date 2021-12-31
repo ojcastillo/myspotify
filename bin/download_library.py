@@ -21,42 +21,21 @@ from time import sleep
 from docopt import docopt
 
 import spotipy
-import spotipy.util as util
+from spotipy.oauth2 import SpotifyOAuth
 
-def trim_item(item):
-    """Trims unnecessary fields in the track item"""
-    track = item['track']
-    if 'album' in track:
-        to_delete = ['album_type', 'available_markets', 'external_urls', 'href',
-                     'images', 'uri']
-        for key in to_delete:
-            try:
-                del track['album'][key]
-            except KeyError:
-                pass
-    to_delete = ['available_markets', 'external_ids', 'external_urls', 'href',
-                 'is_local', 'preview_url', 'uri']
-    for key in to_delete:
-        try:
-            del track[key]
-        except KeyError:
-            pass
-    return item
 
 def main(args):
     """Entry point"""
     print('Asking for authorization from user (if this is the first time)')
-    token = util.prompt_for_user_token(
-        args["<username>"],
-        'user-library-read',
+    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(
+        scope="user-library-read",
+        username=args["<username>"],
+        redirect_uri=args["<redirect_uri>"],
         client_id=args["<client_id>"],
         client_secret=args["<client_secret>"],
-        redirect_uri=args["<redirect_uri>"],
-    )
-    assert token is not None, f"Can't get access token for {username}"
+    ))
 
     print("Starting to download metadata of songs in library")
-    sp = spotipy.Spotify(auth=token)
     limit = 50
     current_offset = 0
     all_tracks = []
@@ -65,9 +44,9 @@ def main(args):
         result = sp.current_user_saved_tracks(limit, current_offset)
         if not result['items']:
             break
-        all_tracks.extend([trim_item(item) for item in result['items']])
+        all_tracks.extend(result['items'])
         if not result['next']:
-            print("Concluding download process")
+            print("No more songs in library, concluding download process")
             break
         sleep(randint(1,2))
         current_offset += limit
