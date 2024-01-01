@@ -131,3 +131,5 @@ dmypy.json
 # Project specific files
 .cache*
 *.json
+.flask_session
+.idea

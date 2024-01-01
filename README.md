@@ -38,6 +38,19 @@ to learn how to generate them. In the process you should also get a redirect URI
 should help you find it.
 
 
+## Flask Server
+
+### Quickstart
+
+1. Set up environment variables:
+    ```sh
+    export SPOTIPY_CLIENT_ID="<client_id>"
+    export SPOTIPY_CLIENT_SECRET="<client_secret>"
+    export SPOTIPY_REDIRECT_URI="<redirect_uri>"
+    ```
+2. Start Flask server with `flask --app src/app.py run`
+
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE) file for details
