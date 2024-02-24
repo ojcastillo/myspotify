@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
 Download all the Spotify metadata of songs in the library of the given user. It will first ask the user to authorize the
-interaction with its library, after which it requires the redirect URL so it can continue to download 50 songs at a time
-as that's the limit per API request.
+interaction with its library, after which it requires the redirect URL defined for the app. It will then continue to
+download 50 liked songs at a time as that's the limit per API request. Then from the list of liked songs retrieved, it
+will proceed to download their audio features (100 at a time) and the metadata of artists (50 at a time).
 
-The first time you run ths script, you should expect it to download ALL of your liked songs. Be prepared to wait a bit
-if you have a large library, the script took ~10mins for a ~10K library. The next time the script will just download new
-liked songs, unless you pas the "--regenerate" argument intended for the case when past metadata needs to be updated.
+The first time you run ths script, you should expect it to download ALL of your liked songs metadata. Be prepared to
+wait a bit if you have a large library, the script took ~10mins for a ~10K library. The next time the script will just
+download new liked songs, unless you pas the "--regenerate" argument intended for the case when past metadata needs to
+be updated.
 
-The results are saved into the path './assets/user_library.json' and './assets/audio_features.json'.
+The results are saved the './assets/' folder.
 
 Usage:
     download_library.py <username> <client_id> <client_secret> <redirect_uri> [-h] [--regenerate]
@@ -32,7 +34,7 @@ from spotipy.oauth2 import SpotifyOAuth
 MAX_TRACKS = 0
 
 
-def get_user_library(sp, most_recent_track=None, max_items=None):
+def get_user_library(sp, most_recent_track=None):
     print("Starting to download metadata of songs in library")
     limit = 50
     current_offset = 0
@@ -71,10 +73,9 @@ def get_user_library(sp, most_recent_track=None, max_items=None):
     return track_list
 
 
-def get_audio_features(sp, all_tracks):
-    print(f"Starting to download audio features of {len(all_tracks)} tracks")
-    all_ids = [track["track"]["id"] for track in all_tracks]
-    # audio_features = sp.audio_features(all_ids[:2])
+def get_audio_features(sp, tracks):
+    print(f"Starting to download audio features of {len(tracks)} tracks")
+    all_ids = [track["track"]["id"] for track in tracks]
     audio_features = []
     offset = 100
     for idx in range(0, len(all_ids), offset):
@@ -82,6 +83,24 @@ def get_audio_features(sp, all_tracks):
         audio_features.extend(sp.audio_features(all_ids[idx : (idx + offset)]))
         sleep(randint(1, 2))
     return audio_features
+
+
+def get_artist_id_set_from_tracks(tracks):
+    artists_per_track = [track["track"]["artists"] for track in tracks]
+    return set([artist["id"] for artists in artists_per_track for artist in artists])
+
+
+def get_artists_metadata(sp, artist_id_set):
+    artist_id_list = list(artist_id_set)
+
+    print(f"Starting to download artist metadata of {len(artist_id_list)} artists")
+    metadata = []
+    offset = 50
+    for idx in range(0, len(artist_id_list), offset):
+        print("Current artist metadata download offset: ", idx)
+        metadata.extend(sp.artists(artist_id_list[idx : (idx + offset)])["artists"])
+        sleep(randint(1, 2))
+    return metadata
 
 
 def load_json_file(file_path):
@@ -110,12 +129,16 @@ def main(args):
 
     user_library_path = "./assets/user_library.json"
     audio_features_path = "./assets/audio_features.json"
+    artists_metadata_path = "./assets/artists_metadata.json"
     if args["--regenerate"]:
         print("Downloading ALL liked tracks!")
         track_list = get_user_library(sp)
 
         print("Downloading audio features of tracks downloaded.")
         audio_features = get_audio_features(sp, track_list)
+
+        print("Downloading metadata of artist linked to tracks downloaded.")
+        artists_metadata = get_artists_metadata(sp, get_artist_id_set_from_tracks(track_list))
     else:
         print("Downloading liked tracks not downloaded before.")
         downloaded_tracks = load_json_file(user_library_path)
@@ -134,6 +157,21 @@ def main(args):
         downloaded_features = load_json_file(audio_features_path)
         audio_features = new_audio_features + downloaded_features
 
+        print("Downloading metadata of new artists linked to tracks downloaded.")
+        downloaded_artists_metadata = load_json_file(artists_metadata_path)
+        downloaded_ids = {artist["id"] for artist in downloaded_artists_metadata}
+
+        new_ids = get_artist_id_set_from_tracks(new_tracks)
+        new_artists_only = new_ids - downloaded_ids
+
+        if new_artists_only:
+            print(f"Found {len(new_artists_only)} new artists. Proceeding to download their metadata")
+            new_artists_metadata = get_artists_metadata(sp, new_artists_only)
+            artists_metadata = new_artists_metadata + downloaded_artists_metadata
+        else:
+            print(f"No new artists found. No metadata to download.")
+            artists_metadata = downloaded_artists_metadata
+
     print(f"Saving {len(track_list)} tracks to {user_library_path}")
     with open(user_library_path, "w") as json_f:
         json.dump(track_list, json_f)
@@ -141,6 +179,10 @@ def main(args):
     print(f"Saving {len(audio_features)} features to {audio_features_path}")
     with open(audio_features_path, "w") as json_f:
         json.dump(audio_features, json_f)
+
+    print(f"Saving metadata of {len(artists_metadata)} artists to {artists_metadata_path}")
+    with open(artists_metadata_path, "w") as json_f:
+        json.dump(artists_metadata, json_f)
 
 
 if __name__ == "__main__":
