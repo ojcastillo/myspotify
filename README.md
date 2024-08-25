@@ -1,6 +1,6 @@
 # MySpotify
 
-A family of scripts I created to analyze my personal Spotify library.
+This repo allows running a Flask/Dash app which can be used to create playlists based on liked songs.
 
 ## Initial Setup
 
@@ -20,14 +20,12 @@ installed ([instructions](https://docs.conda.io/projects/conda/en/latest/user-gu
 
 ### Download all of your library metadata
 
-Download all the Spotify metadata of songs in the library of the given user. It will first ask the
-user to authorize the interaction with its library, after which it requires the redirect URL so it
-can continue to download 50 songs at a time until it can't find any more of them or until 10,000
-songs are downloaded. The results are saved into the path './resources/user_library.json'.
-
+You can use the following script tp download all the Spotify metadata of songs in the library of a given user:
 ```bash
-./bin/download_library.py <username> <client_id> <client_secret> <redirect_uri>
+./bin/download_library.py <username> <client_id> <client_secret> <redirect_uri> [-h] [--regenerate]
 ```
+
+Check the help message of the script to learn more about how to run. 
 
 #### Requirements
 
@@ -42,13 +40,14 @@ should help you find it.
 
 ### Quickstart
 
-1. Set up environment variables:
+1. Set up required environment variables:
     ```sh
     export SPOTIPY_CLIENT_ID="<client_id>"
     export SPOTIPY_CLIENT_SECRET="<client_secret>"
     export SPOTIPY_REDIRECT_URI="<redirect_uri>"
+    export SPOTIPY_CLIENT_USERNAME="<client_username>"
     ```
-2. Start Flask server with `flask --app src/app.py run`
+2. Start Flask server with `flask --app src/app.py --debug run`
 
 
 ## License
