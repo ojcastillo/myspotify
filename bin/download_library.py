@@ -127,9 +127,9 @@ def main(args):
         )
     )
 
-    user_library_path = "./assets/user_library.json"
-    audio_features_path = "./assets/audio_features.json"
-    artists_metadata_path = "./assets/artists_metadata.json"
+    user_library_path = f"./assets/user_library_{args['<username>']}.json"
+    audio_features_path = f"./assets/audio_features_{args['<username>']}.json"
+    artists_metadata_path = f"./assets/artists_metadata_{args['<username>']}.json"
     if args["--regenerate"]:
         print("Downloading ALL liked tracks!")
         track_list = get_user_library(sp)
