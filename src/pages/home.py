@@ -25,7 +25,9 @@ def get_library_plots_div(df):
     clean_df = df[df["track.album.release_decade"] > 0]
     decade_df = clean_df.groupby("track.album.release_decade").size().reset_index(name="count")
 
-    sorted_artists = clean_df.explode("track.artists")["track.artists"].value_counts().sort_values(ascending=False)
+    sorted_artists = (
+        clean_df.explode("track.artist_names")["track.artist_names"].value_counts().sort_values(ascending=False)
+    )
     top25_artists = sorted_artists.head(25)
 
     return dash.html.Div(
