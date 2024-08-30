@@ -70,4 +70,15 @@ class DataSingleton:
             lambda duration_sec: float(f"%.2f" % (duration_sec / 60))
         )
 
+        merged_df["track.added_at.year"] = merged_df["added_at"].str.split("-").str.get(0).astype(int)
+
         return merged_df
+
+    @staticmethod
+    def get_artist_cnt(df):
+        return df.explode("track.artist_names")["track.artist_names"].nunique()
+
+    @staticmethod
+    def get_first_artist_genre_cnt(df):
+        col_name = "track.first_artist.genres"
+        return df.explode(col_name)[col_name].nunique()
