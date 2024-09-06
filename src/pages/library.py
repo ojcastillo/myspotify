@@ -7,22 +7,24 @@ from common.spotify import SpotifyClientSingleton
 dash.register_page(__name__)
 
 
+TABLE_COLUMNS = [
+    {"name": "Date Added", "id": "added_at"},
+    {"name": "Track", "id": "track.name"},
+    {"name": "Album", "id": "track.album.name"},
+    {"name": "First Artist", "id": "track.first_artist.name"},
+    {"name": "Genres", "id": "track.first_artist.genres_str"},
+    {"name": "Release Year", "id": "track.album.release_year"},
+    {"name": "Release Decade", "id": "track.album.release_decade"},
+    {"name": "Duration (in mins)", "id": "track.duration_min"},
+    {"name": "Danceability", "id": "track.danceability"},
+    {"name": "Energy", "id": "track.energy"},
+    {"name": "Valence", "id": "track.valence"},
+]
+
+
 def get_data_table(df):
     df["id"] = df["track.id"]
-    columns = {
-        "id": "Track ID",
-        "added_at": "Date Added",
-        "track.name": "Track",
-        "track.album.name": "Album",
-        "track.first_artist.name": "First Artist",
-        "track.first_artist.genres": "Genres",
-        "track.album.release_year": "Release Year",
-        "track.album.release_decade": "Release Decade",
-        "track.duration_min": "Duration (in mins)",
-        "track.danceability": "Danceability",
-        "track.energy": "Energy",
-        "track.valence": "Valence",
-    }
+    data_columns = ["id"] + [col["id"] for col in TABLE_COLUMNS]
     return dash.html.Div(
         children=[
             dbc.Alert(
@@ -59,14 +61,50 @@ def get_data_table(df):
             dash.dcc.Input(id="filter-query-input", placeholder="Enter filter query..."),
             dash.html.Div(id="filter-query-output"),
             dash.html.Hr(),
+            dash.dcc.Markdown("Select columns to display (filters on them would still work):"),
+            dash.dcc.Checklist(
+                id="column-selector",
+                labelStyle={"display": "inline-flex", "align-items": "start", "padding": "5px"},
+                options=[{
+                    "label": dash.dcc.Markdown(f'{col["name"]} (`{col["id"]})`'),
+                    "value": col["id"],
+                } for col in TABLE_COLUMNS],
+                value=[
+                    "added_at",
+                    "track.name",
+                    "track.album.name",
+                    "track.first_artist.name",
+                    "track.first_artist.genres_str",
+                    "track.album.release_year",
+                ],
+            ),
             dash.dash_table.DataTable(
                 id="library-table",
-                data=df[columns.keys()].to_dict("records"),
-                columns=[{"name": name, "id": col_id} for col_id, name in columns.items() if col_id != "id"],
+                data=df[data_columns].to_dict("records"),
+                columns=TABLE_COLUMNS,
                 sort_action="native",
                 filter_action="native",
                 row_selectable="multi",
                 selected_rows=[],
+                style_header={"border": "1px solid pink"},
+                style_data={"border": "1px solid blue"},
+                style_cell_conditional=[
+                    {
+                        "if": {"column_id": "track.first_artist.genres_str"},
+                        "whiteSpace": "nowrap",
+                        "overflow": "auto",
+                        "maxWidth": "400px",
+                    }
+                ]
+                + [
+                    {
+                        "if": {"column_id": c},
+                        "whiteSpace": "normal",
+                        "overflow": "auto",
+                        "maxWidth": "300px",
+                    }
+                    for c in ["track.name", "track.album.name", "track.first_artist.name"]
+                ],
             ),
             dbc.Modal(
                 [
@@ -94,6 +132,14 @@ def get_data_table(df):
             ),
         ],
     )
+
+
+@dash.callback(
+    dash.Output("library-table", "columns"),
+    dash.Input("column-selector", "value"),
+)
+def update_columns(selected_columns):
+    return [col for col in TABLE_COLUMNS if col["id"] in selected_columns]
 
 
 @dash.callback(

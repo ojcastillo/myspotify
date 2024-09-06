@@ -72,6 +72,10 @@ class DataSingleton:
 
         merged_df["track.added_at.year"] = merged_df["added_at"].str.split("-").str.get(0).astype(int)
 
+        merged_df["track.first_artist.genres_str"] = merged_df["track.first_artist.genres"].apply(
+            lambda genres: ", ".join(genres)
+        )
+
         return merged_df
 
     @staticmethod
