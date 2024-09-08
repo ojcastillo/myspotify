@@ -17,33 +17,24 @@ server.config["SESSION_TYPE"] = "filesystem"
 server.config["SESSION_FILE_DIR"] = "./.flask_session/"
 Session(server)
 
-
 app = dash.Dash(
-    __name__, server=server, use_pages=True, external_stylesheets=[dbc.themes.BOOTSTRAP], url_base_pathname="/dash/"
+    __name__, server=server, use_pages=True, external_stylesheets=[dbc.themes.LUX], url_base_pathname="/dash/"
 )
 app.layout = dash.html.Div(
     [
         dash.html.Div(
             id="header-div",
             children=[
-                dash.dcc.Markdown(
-                    children="""
-                # MySpotify
-
-                An interactive way to learn about what you have stored in your personal Spotify
-                library and build playlists with it.
-            """
-                ),
-                dash.html.Div(
-                    [
-                        dash.html.Div(
-                            dash.dcc.Link(
-                                f"{page['name']} - {page['path']}",
-                                href=page["relative_path"],
-                            )
-                        )
-                        for page in dash.page_registry.values()
-                    ]
+                dbc.NavbarSimple(
+                    dbc.Nav(
+                        [
+                            dbc.NavLink(page["name"], href=page["relative_path"])
+                            for page in dash.page_registry.values()
+                        ],
+                    ),
+                    brand="MySpotify",
+                    color="primary",
+                    dark=True,
                 ),
             ],
         ),
