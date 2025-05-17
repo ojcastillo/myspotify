@@ -13,7 +13,7 @@ be updated.
 The results are saved the './assets/' folder.
 
 Usage:
-    download_library.py <username> <client_id> <client_secret> <redirect_uri> [-h] [--regenerate]
+    download_library.py <client_username> <client_id> <client_secret> <redirect_uri> [-h] [--regenerate]
 
 Options:
     -h --help           Show this help information
@@ -120,16 +120,16 @@ def main(args):
     sp = spotipy.Spotify(
         auth_manager=SpotifyOAuth(
             scope="user-library-read",
-            username=args["<username>"],
+            username=args["<client_username>"],
             redirect_uri=args["<redirect_uri>"],
             client_id=args["<client_id>"],
             client_secret=args["<client_secret>"],
         )
     )
 
-    user_library_path = f"./assets/user_library_{args['<username>']}.json"
-    audio_features_path = f"./assets/audio_features_{args['<username>']}.json"
-    artists_metadata_path = f"./assets/artists_metadata_{args['<username>']}.json"
+    user_library_path = f"./assets/user_library_{args['<client_username>']}.json"
+    audio_features_path = f"./assets/audio_features_{args['<client_username>']}.json"
+    artists_metadata_path = f"./assets/artists_metadata_{args['<client_username>']}.json"
     if args["--regenerate"]:
         print("Downloading ALL liked tracks!")
         track_list = get_user_library(sp)
