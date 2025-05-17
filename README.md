@@ -4,13 +4,9 @@ This repo allows running a Flask/Dash app which can be used to create playlists 
 
 ## Initial Setup
 
-### Installing Dependencies
+### Set up virtual environment
 
-You can find all the Python dependencies in the `requirements.txt` file. It is recommended to use a
-`conda` managed environment.
-
-Running the following command will set up a `conda` environment automatically, assuming `conda` is
-installed ([instructions](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)).
+You can use the command below to set up the environment. Make sure you're using Python 3.8+
 
 ```bash
 . init_workspace.sh
@@ -22,7 +18,7 @@ installed ([instructions](https://docs.conda.io/projects/conda/en/latest/user-gu
 
 You can use the following script tp download all the Spotify metadata of songs in the library of a given user:
 ```bash
-./bin/download_library.py <username> <client_id> <client_secret> <redirect_uri> [-h] [--regenerate]
+./bin/download_library.py <client_username> <client_id> <client_secret> <redirect_uri> [-h] [--regenerate]
 ```
 
 Check the help message of the script to learn more about how to run. 
@@ -34,7 +30,6 @@ Check the help message of the script to learn more about how to run.
 to learn how to generate them. In the process you should also get a redirect URI allowed.
 - Spotify username. This [article](https://www.androidauthority.com/how-to-find-spotify-username-3071901/)
 should help you find it.
-
 
 ## Flask Server
 
@@ -49,6 +44,9 @@ should help you find it.
     ```
 2. Start Flask server with `flask --app src/app.py --debug run`
 
+## Jupyter Notebooks
+
+Run `jupyter notebook` and once the server is up, you can now open **notebooks/analysis_example.ipynb**
 
 ## License
 
