@@ -133,3 +133,5 @@ dmypy.json
 *.json
 .flask_session
 .idea
+bin/run_server.sh
+notebooks/playground.ipynb
