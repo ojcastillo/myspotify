@@ -2,8 +2,8 @@
 """
 Download all the Spotify metadata of songs in the library of the given user. It will first ask the user to authorize the
 interaction with its library, after which it requires the redirect URL defined for the app. It will then continue to
-download 50 liked songs at a time as that's the limit per API request. Then from the list of liked songs retrieved, it
-will proceed to download their audio features (100 at a time) and the metadata of artists (50 at a time).
+download 50 liked songs at a time as that's the limit per API request. Audio features download is currently disabled
+due to Spotify API deprecation (Nov 2024). Artist metadata (50 at a time) will still be downloaded.
 
 The first time you run ths script, you should expect it to download ALL of your liked songs metadata. Be prepared to
 wait a bit if you have a large library, the script took ~10mins for a ~10K library. The next time the script will just
@@ -134,8 +134,8 @@ def main(args):
         print("Downloading ALL liked tracks!")
         track_list = get_user_library(sp)
 
-        print("Downloading audio features of tracks downloaded.")
-        audio_features = get_audio_features(sp, track_list)
+        print("Skipping audio features download (Spotify API deprecated). Using existing data.")
+        audio_features = load_json_file(audio_features_path) or []
 
         print("Downloading metadata of artist linked to tracks downloaded.")
         artists_metadata = get_artists_metadata(sp, get_artist_id_set_from_tracks(track_list))
@@ -152,10 +152,9 @@ def main(args):
         print(f"Found {len(new_tracks)} new liked tracks")
         track_list = new_tracks + downloaded_tracks
 
-        print("Downloading audio features of new tracks downloaded only.")
-        new_audio_features = get_audio_features(sp, new_tracks)
+        print("Skipping audio features download (Spotify API deprecated). Using existing data.")
         downloaded_features = load_json_file(audio_features_path)
-        audio_features = new_audio_features + downloaded_features
+        audio_features = downloaded_features or []
 
         print("Downloading metadata of new artists linked to tracks downloaded.")
         downloaded_artists_metadata = load_json_file(artists_metadata_path)
