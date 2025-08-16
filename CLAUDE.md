@@ -9,7 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Activate virtual environment: `source .venv/bin/activate`
 
 ### Running the Application
-- Start Flask server: `flask --app src/app.py --debug run`
+- To spin up the Flask server, rely on `sh bin/run_server.sh orlando` command if available. Otherwise, 
+fall back to `flask --app src/app.py --debug run`, but that will require environment variable defined in advance.
 - Alternative: `python src/app.py` (runs on port from SPOTIPY_REDIRECT_URI or 8080)
 - Jupyter notebooks: `jupyter notebook` then open `notebooks/analysis_example.ipynb`
 
