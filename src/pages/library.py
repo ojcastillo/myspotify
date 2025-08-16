@@ -42,6 +42,38 @@ def get_data_table(df):
                 is_open=False,
                 color="danger",
             ),
+            dash.dcc.Markdown("##### Create a playlist from selected rows:"),
+            dbc.Button("Select All", id="select-all-button", className="me-1"),
+            dbc.Button("Deselect All", id="deselect-all-button", className="me-1"),
+            dash.dcc.Input(
+                id="playlist-name-input",
+                type="text",
+                placeholder="Name of playlist",
+            ),
+            dbc.Button("Create Playlist", id="create-playlist-button", className="me-1"),
+            dash.html.Br(),
+            dash.html.Div(
+                [
+                    dash.html.Span("Selected rows: 0", id="display-selected-count", style={"margin-right": "10px"}),
+                    dash.html.Span("|", style={"margin-right": "10px"}),
+                    dash.html.Span(f"Filtered rows: {df.shape[0]}", id="display-filtered-count"),
+                ]
+            ),
+            # dash.html.Div("Selected rows: 0", id="display-selected-count", className="me-1"),
+            # dash.html.Div(f"Filtered rows: {df.shape[0]}", id="display-filtered-count", className="me-1"),
+            dash.dcc.RadioItems(
+                [
+                    {"label": "Read filter_query", "value": "read"},
+                    {"label": "Write to filter_query", "value": "write"},
+                ],
+                "read",
+                id="filter-query-radio",
+            ),
+            dash.html.Br(),
+            dash.dcc.Input(id="filter-query-input", placeholder="Enter filter query..."),
+            dash.html.Div(id="filter-query-output"),
+            dash.html.Br(),
+            dash.html.Hr(),
             dash.dcc.Markdown("##### Select columns to display (filters on them would still work):"),
             dash.dcc.Checklist(
                 id="column-selector",
@@ -49,6 +81,7 @@ def get_data_table(df):
                 options=[
                     {
                         "label": dash.dcc.Markdown(f'{col["name"]} (`{col["id"]})`'),
+                        # "label": col["name"],
                         "value": col["id"],
                     }
                     for col in TABLE_COLUMNS
@@ -62,28 +95,6 @@ def get_data_table(df):
                     "track.album.release_year",
                 ],
             ),
-            dash.html.Hr(),
-            dash.dcc.Markdown("##### Create a playlist from filtered rows:"),
-            dash.html.Div("Selected rows: 0", id="display-selected-count", className="me-1"),
-            dash.html.Div(f"Filtered rows: {df.shape[0]}", id="display-filtered-count", className="me-1"),
-            dash.dcc.RadioItems(
-                [{"label": "Read filter_query", "value": "read"}, {"label": "Write to filter_query", "value": "write"}],
-                "read",
-                id="filter-query-radio",
-            ),
-            dash.html.Br(),
-            dash.dcc.Input(id="filter-query-input", placeholder="Enter filter query..."),
-            dash.html.Div(id="filter-query-output"),
-            dash.html.Br(),
-            dbc.Button("Select All", id="select-all-button", className="me-1"),
-            dbc.Button("Deselect All", id="deselect-all-button", className="me-1"),
-            dash.dcc.Input(
-                id="playlist-name-input",
-                type="text",
-                placeholder="Name of playlist",
-            ),
-            dbc.Button("Create Playlist", id="create-playlist-button", className="me-1"),
-            dash.html.Hr(),
             dash.dash_table.DataTable(
                 id="library-table",
                 data=df[data_columns].to_dict("records"),
@@ -92,7 +103,7 @@ def get_data_table(df):
                 filter_action="native",
                 row_selectable="multi",
                 selected_rows=[],
-                style_header={"border": "1px solid pink"},
+                style_header={"border": "1px solid pink", "position": "sticky", "top": 0},
                 style_data={"border": "1px solid blue"},
                 style_cell_conditional=[
                     {
