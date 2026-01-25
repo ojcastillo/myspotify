@@ -135,3 +135,4 @@ dmypy.json
 .idea
 bin/run_server.sh
 notebooks/playground.ipynb
+*.db
