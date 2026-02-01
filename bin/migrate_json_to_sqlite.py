@@ -23,124 +23,20 @@ import sys
 import pandas as pd
 from docopt import docopt
 
+# Add src directory to path to import shared database helpers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from src.common.db_helpers import (
+    create_schema,
+    insert_artists,
+    insert_tracks,
+    insert_track_artists,
+    insert_audio_features,
+    insert_user_tracks
+)
+
 
 # Fixed database path - single database for all users
 DEFAULT_DB_PATH = "./assets/spotify_data.db"
-
-
-# SQL Schema Constants - FULLY NORMALIZED (4 global tables + 1 user-specific)
-
-CREATE_TRACKS_TABLE = """
-CREATE TABLE IF NOT EXISTS tracks (
-    track_id TEXT PRIMARY KEY,
-    track_name TEXT NOT NULL,
-    track_duration_ms INTEGER NOT NULL,
-    track_popularity INTEGER,
-    track_explicit INTEGER,
-    track_is_local INTEGER,
-    track_disc_number INTEGER,
-    track_track_number INTEGER,
-    track_uri TEXT,
-    track_href TEXT,
-    track_spotify_url TEXT,
-    track_preview_url TEXT,
-    track_isrc TEXT,
-    album_id TEXT NOT NULL,
-    album_name TEXT NOT NULL,
-    album_type TEXT,
-    album_release_date TEXT,
-    album_release_date_precision TEXT,
-    album_total_tracks INTEGER,
-    album_uri TEXT,
-    album_href TEXT,
-    album_spotify_url TEXT,
-    album_images TEXT,
-    album_artists TEXT,
-    track_artists TEXT NOT NULL,
-    first_artist_id TEXT NOT NULL,
-    available_markets TEXT,
-    FOREIGN KEY (first_artist_id) REFERENCES artists(artist_id)
-);
-"""
-
-CREATE_TRACKS_INDEXES = """
-CREATE INDEX IF NOT EXISTS idx_tracks_name ON tracks(track_name);
-CREATE INDEX IF NOT EXISTS idx_tracks_album_date ON tracks(album_release_date);
-CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(first_artist_id);
-CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_id);
-"""
-
-CREATE_AUDIO_FEATURES_TABLE = """
-CREATE TABLE IF NOT EXISTS audio_features (
-    track_id TEXT PRIMARY KEY,
-    danceability REAL,
-    energy REAL,
-    key INTEGER,
-    loudness REAL,
-    mode INTEGER,
-    speechiness REAL,
-    acousticness REAL,
-    instrumentalness REAL,
-    liveness REAL,
-    valence REAL,
-    tempo REAL,
-    time_signature INTEGER,
-    duration_ms INTEGER,
-    track_href TEXT,
-    analysis_url TEXT,
-    FOREIGN KEY (track_id) REFERENCES tracks(track_id)
-);
-"""
-
-CREATE_ARTISTS_TABLE = """
-CREATE TABLE IF NOT EXISTS artists (
-    artist_id TEXT PRIMARY KEY,
-    artist_name TEXT NOT NULL,
-    popularity INTEGER,
-    followers_total INTEGER,
-    genres TEXT,
-    artist_uri TEXT,
-    artist_href TEXT,
-    artist_spotify_url TEXT,
-    images TEXT
-);
-"""
-
-CREATE_ARTISTS_INDEXES = """
-CREATE INDEX IF NOT EXISTS idx_artists_name ON artists(artist_name);
-CREATE INDEX IF NOT EXISTS idx_artists_popularity ON artists(popularity);
-"""
-
-CREATE_TRACK_ARTISTS_TABLE = """
-CREATE TABLE IF NOT EXISTS track_artists (
-    track_id TEXT NOT NULL,
-    artist_id TEXT NOT NULL,
-    artist_position INTEGER NOT NULL,
-    PRIMARY KEY (track_id, artist_id, artist_position),
-    FOREIGN KEY (track_id) REFERENCES tracks(track_id),
-    FOREIGN KEY (artist_id) REFERENCES artists(artist_id)
-);
-"""
-
-CREATE_TRACK_ARTISTS_INDEX = """
-CREATE INDEX IF NOT EXISTS idx_track_artists_artist ON track_artists(artist_id);
-"""
-
-CREATE_USER_TRACKS_TABLE = """
-CREATE TABLE IF NOT EXISTS user_tracks (
-    user_id TEXT NOT NULL,
-    track_id TEXT NOT NULL,
-    added_at TEXT NOT NULL,
-    PRIMARY KEY (user_id, track_id),
-    FOREIGN KEY (track_id) REFERENCES tracks(track_id)
-);
-"""
-
-CREATE_USER_TRACKS_INDEXES = """
-CREATE INDEX IF NOT EXISTS idx_user_tracks_user ON user_tracks(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_tracks_added_at ON user_tracks(user_id, added_at);
-CREATE INDEX IF NOT EXISTS idx_user_tracks_track ON user_tracks(track_id);
-"""
 
 
 def load_json_files(username):
@@ -169,203 +65,6 @@ def load_json_files(username):
     print(f"  Loaded {len(artists_data)} artists")
 
     return library_data, features_data, artists_data
-
-
-def create_schema(conn):
-    """Create all tables with indexes."""
-    print("Creating database schema...")
-    cursor = conn.cursor()
-
-    # Create tables
-    cursor.executescript(CREATE_ARTISTS_TABLE)
-    cursor.executescript(CREATE_TRACKS_TABLE)
-    cursor.executescript(CREATE_AUDIO_FEATURES_TABLE)
-    cursor.executescript(CREATE_TRACK_ARTISTS_TABLE)
-    cursor.executescript(CREATE_USER_TRACKS_TABLE)
-
-    # Create indexes
-    cursor.executescript(CREATE_ARTISTS_INDEXES)
-    cursor.executescript(CREATE_TRACKS_INDEXES)
-    cursor.executescript(CREATE_TRACK_ARTISTS_INDEX)
-    cursor.executescript(CREATE_USER_TRACKS_INDEXES)
-
-    conn.commit()
-    print("  Database schema created successfully")
-
-
-def insert_artists(conn, artists_data):
-    """Insert artist metadata using INSERT OR IGNORE for deduplication."""
-    print(f"Inserting {len(artists_data)} artists (using INSERT OR IGNORE)...")
-    cursor = conn.cursor()
-
-    inserted = 0
-    for artist in artists_data:
-        cursor.execute("""
-            INSERT OR IGNORE INTO artists (
-                artist_id, artist_name, popularity, followers_total,
-                genres, artist_uri, artist_href, artist_spotify_url, images
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            artist['id'],
-            artist['name'],
-            artist.get('popularity'),
-            artist.get('followers', {}).get('total'),
-            json.dumps(artist.get('genres', [])),
-            artist.get('uri'),
-            artist.get('href'),
-            artist.get('external_urls', {}).get('spotify'),
-            json.dumps(artist.get('images', []))
-        ))
-        if cursor.rowcount > 0:
-            inserted += 1
-
-    conn.commit()
-    print(f"  Inserted {inserted} new artists (skipped {len(artists_data) - inserted} duplicates)")
-
-
-def insert_tracks(conn, library_data):
-    """Insert track and album data using INSERT OR IGNORE for deduplication."""
-    print(f"Inserting tracks from {len(library_data)} library entries (using INSERT OR IGNORE)...")
-    cursor = conn.cursor()
-
-    inserted = 0
-    for item in library_data:
-        track = item['track']
-        album = track['album']
-
-        # Extract first artist ID for foreign key
-        first_artist_id = track['artists'][0]['id']
-
-        cursor.execute("""
-            INSERT OR IGNORE INTO tracks (
-                track_id, track_name, track_duration_ms,
-                track_popularity, track_explicit, track_is_local,
-                track_disc_number, track_track_number,
-                track_uri, track_href, track_spotify_url, track_preview_url,
-                track_isrc, album_id, album_name, album_type,
-                album_release_date, album_release_date_precision,
-                album_total_tracks, album_uri, album_href, album_spotify_url,
-                album_images, album_artists, track_artists,
-                first_artist_id, available_markets
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            track['id'],
-            track['name'],
-            track['duration_ms'],
-            track.get('popularity'),
-            1 if track.get('explicit') else 0,
-            1 if track.get('is_local') else 0,
-            track.get('disc_number'),
-            track.get('track_number'),
-            track.get('uri'),
-            track.get('href'),
-            track.get('external_urls', {}).get('spotify'),
-            track.get('preview_url'),
-            track.get('external_ids', {}).get('isrc'),
-            album['id'],
-            album['name'],
-            album.get('album_type'),
-            album.get('release_date'),
-            album.get('release_date_precision'),
-            album.get('total_tracks'),
-            album.get('uri'),
-            album.get('href'),
-            album.get('external_urls', {}).get('spotify'),
-            json.dumps(album.get('images', [])),
-            json.dumps(album.get('artists', [])),
-            json.dumps(track.get('artists', [])),
-            first_artist_id,
-            json.dumps(track.get('available_markets', []))
-        ))
-        if cursor.rowcount > 0:
-            inserted += 1
-
-    conn.commit()
-    print(f"  Inserted {inserted} new tracks (skipped {len(library_data) - inserted} duplicates)")
-
-
-def insert_track_artists(conn, library_data):
-    """Insert many-to-many track-artist relationships using INSERT OR IGNORE."""
-    print("Inserting track-artist relationships (using INSERT OR IGNORE)...")
-    cursor = conn.cursor()
-
-    inserted = 0
-    for item in library_data:
-        track_id = item['track']['id']
-        artists = item['track']['artists']
-
-        for position, artist in enumerate(artists):
-            cursor.execute("""
-                INSERT OR IGNORE INTO track_artists (track_id, artist_id, artist_position)
-                VALUES (?, ?, ?)
-            """, (track_id, artist['id'], position))
-            if cursor.rowcount > 0:
-                inserted += 1
-
-    conn.commit()
-    print(f"  Inserted {inserted} new track-artist relationships")
-
-
-def insert_audio_features(conn, features_data):
-    """Insert audio feature data using INSERT OR IGNORE for deduplication."""
-    # Filter out None values
-    valid_features = [f for f in features_data if f is not None]
-    print(f"Inserting {len(valid_features)} audio features (using INSERT OR IGNORE, skipping {len(features_data) - len(valid_features)} None values)...")
-
-    cursor = conn.cursor()
-
-    inserted = 0
-    for features in valid_features:
-        cursor.execute("""
-            INSERT OR IGNORE INTO audio_features (
-                track_id, danceability, energy, key, loudness, mode,
-                speechiness, acousticness, instrumentalness, liveness,
-                valence, tempo, time_signature, duration_ms,
-                track_href, analysis_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            features['id'],
-            features.get('danceability'),
-            features.get('energy'),
-            features.get('key'),
-            features.get('loudness'),
-            features.get('mode'),
-            features.get('speechiness'),
-            features.get('acousticness'),
-            features.get('instrumentalness'),
-            features.get('liveness'),
-            features.get('valence'),
-            features.get('tempo'),
-            features.get('time_signature'),
-            features.get('duration_ms'),
-            features.get('track_href'),
-            features.get('analysis_url')
-        ))
-        if cursor.rowcount > 0:
-            inserted += 1
-
-    conn.commit()
-    print(f"  Inserted {inserted} new audio features (skipped {len(valid_features) - inserted} duplicates)")
-
-
-def insert_user_tracks(conn, username, library_data):
-    """Insert user-specific track library relationships (handles duplicates)."""
-    print(f"Inserting {len(library_data)} user_tracks entries for user {username}...")
-    cursor = conn.cursor()
-
-    inserted = 0
-    for item in library_data:
-        track_id = item['track']['id']
-        added_at = item['added_at']
-
-        cursor.execute("""
-            INSERT OR IGNORE INTO user_tracks (user_id, track_id, added_at)
-            VALUES (?, ?, ?)
-        """, (username, track_id, added_at))
-        inserted += cursor.rowcount
-
-    conn.commit()
-    print(f"  Inserted {inserted} new user_tracks entries (skipped {len(library_data) - inserted} duplicates)")
 
 
 def verify_migration(db_path, username, library_data, features_data, artists_data):
@@ -584,7 +283,9 @@ def migrate_with_transaction(db_path, username, library_data, features_data, art
 
         if not existing_tables:
             print(f"Creating new database at: {db_path}")
+            print("Creating database schema...")
             create_schema(conn)
+            print("  Database schema created successfully")
         else:
             print(f"Using existing database at: {db_path}")
             print(f"  Existing tables: {existing_tables}")
@@ -607,13 +308,27 @@ def migrate_with_transaction(db_path, username, library_data, features_data, art
 
         # Insert data in correct order (respecting foreign keys)
         # Global tables first (with OR IGNORE for deduplication)
-        insert_artists(conn, artists_data)
-        insert_tracks(conn, library_data)
-        insert_track_artists(conn, library_data)
-        insert_audio_features(conn, features_data)
+        print(f"Inserting {len(artists_data)} artists (using INSERT OR IGNORE)...")
+        inserted_artists = insert_artists(conn, artists_data)
+        print(f"  Inserted {inserted_artists} new artists (skipped {len(artists_data) - inserted_artists} duplicates)")
+
+        print(f"Inserting tracks from {len(library_data)} library entries (using INSERT OR IGNORE)...")
+        inserted_tracks = insert_tracks(conn, library_data)
+        print(f"  Inserted {inserted_tracks} new tracks (skipped {len(library_data) - inserted_tracks} duplicates)")
+
+        print("Inserting track-artist relationships (using INSERT OR IGNORE)...")
+        inserted_track_artists = insert_track_artists(conn, library_data)
+        print(f"  Inserted {inserted_track_artists} new track-artist relationships")
+
+        valid_features = [f for f in features_data if f is not None]
+        print(f"Inserting {len(valid_features)} audio features (using INSERT OR IGNORE, skipping {len(features_data) - len(valid_features)} None values)...")
+        inserted_features = insert_audio_features(conn, features_data)
+        print(f"  Inserted {inserted_features} new audio features (skipped {len(valid_features) - inserted_features} duplicates)")
 
         # User-specific table last
-        insert_user_tracks(conn, username, library_data)
+        print(f"Inserting {len(library_data)} user_tracks entries for user {username}...")
+        inserted_user_tracks = insert_user_tracks(conn, username, library_data)
+        print(f"  Inserted {inserted_user_tracks} new user_tracks entries (skipped {len(library_data) - inserted_user_tracks} duplicates)")
 
         print(f"\n✓ Migration completed successfully for user {username}!")
         print(f"✓ Database: {db_path}")

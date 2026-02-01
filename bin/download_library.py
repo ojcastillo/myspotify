@@ -1,26 +1,28 @@
 #!/usr/bin/env python3
 """
-Download all the Spotify metadata of songs in the library of the given user. It will first ask the user to authorize the
-interaction with its library, after which it requires the redirect URL defined for the app. It will then continue to
-download 50 liked songs at a time as that's the limit per API request. Audio features download is currently disabled
-due to Spotify API deprecation (Nov 2024). Artist metadata (50 at a time) will still be downloaded.
+Download Spotify metadata of songs in the user's library directly to SQLite database.
 
-The first time you run ths script, you should expect it to download ALL of your liked songs metadata. Be prepared to
-wait a bit if you have a large library, the script took ~10mins for a ~10K library. The next time the script will just
-download new liked songs, unless you pas the "--regenerate" argument intended for the case when past metadata needs to
-be updated.
+This script downloads liked songs, artist metadata, and saves them to a SQLite database.
+Audio features download is currently disabled due to Spotify API deprecation (Nov 2024).
 
-The results are saved the './assets/' folder.
+The first time you run this script, it will download ALL of your liked songs metadata.
+For a ~10K library, this takes ~10mins. Subsequent runs will only download new liked songs
+unless you pass the "--regenerate" flag.
+
+Data is saved to a SQLite database (default: ./assets/spotify_data.db).
 
 Usage:
-    download_library.py <client_username> <client_id> <client_secret> <redirect_uri> [-h] [--regenerate]
+    download_library.py <client_username> <client_id> <client_secret> <redirect_uri> [-h] [--regenerate] [--db-path PATH]
 
 Options:
     -h --help           Show this help information
-    --regenerate        Download ALL tracks liked by the user, as opposed to only downloading tracks not downloaded
-                        before. Only run this if the metadata collected needs to be re-generated.
+    --regenerate        Download ALL tracks liked by the user (full refresh)
+    --db-path PATH      SQLite database path [default: ./assets/spotify_data.db]
 """
 import json
+import os
+import sqlite3
+import sys
 from random import randint
 from time import sleep
 
@@ -28,11 +30,112 @@ import spotipy
 from docopt import docopt
 from spotipy.oauth2 import SpotifyOAuth
 
+# Add src directory to path to import shared database helpers
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from src.common.db_helpers import (
+    create_schema,
+    insert_artists,
+    insert_tracks,
+    insert_track_artists,
+    insert_audio_features,
+    insert_user_tracks
+)
+
 
 # Max tracks to download if set to something greater than 0, otherwise downloads everything.
 # Intended just for targeted small tests.
 MAX_TRACKS = 0
 
+# Fixed database path - single database for all users
+DEFAULT_DB_PATH = "./assets/spotify_data.db"
+
+
+# ============================================================================
+# Database Helper Functions
+# ============================================================================
+
+def get_or_create_connection(db_path):
+    """
+    Connect to SQLite database and ensure schema exists.
+
+    Args:
+        db_path: Path to SQLite database file
+
+    Returns:
+        SQLite connection object
+    """
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = ON")
+
+    # Check if schema exists, create if not
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    existing_tables = {row[0] for row in cursor.fetchall()}
+
+    if not existing_tables:
+        print(f"Creating new database at: {db_path}")
+        print("Creating database schema...")
+        create_schema(conn)
+        print("  Database schema created successfully")
+    else:
+        print(f"Using existing database at: {db_path}")
+
+    return conn
+
+
+def get_most_recent_track_from_db(conn, username):
+    """
+    Query user_tracks table for most recent track (for incremental downloads).
+
+    Args:
+        conn: SQLite database connection
+        username: User ID
+
+    Returns:
+        Track object compatible with existing comparison logic, or None if no tracks exist
+    """
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT ut.track_id, ut.added_at, t.track_artists
+        FROM user_tracks ut
+        JOIN tracks t ON ut.track_id = t.track_id
+        WHERE ut.user_id = ?
+        ORDER BY ut.added_at DESC
+        LIMIT 1
+    """, (username,))
+
+    result = cursor.fetchone()
+    if result:
+        track_id, added_at, track_artists_json = result
+        # Reconstruct track object for compatibility with get_user_library
+        return {
+            "track": {
+                "id": track_id,
+                "artists": json.loads(track_artists_json)
+            },
+            "added_at": added_at
+        }
+    return None
+
+
+def get_existing_artist_ids(conn):
+    """
+    Query database for all existing artist IDs (for incremental downloads).
+
+    Args:
+        conn: SQLite database connection
+
+    Returns:
+        Set of artist IDs already in database
+    """
+    cursor = conn.cursor()
+    cursor.execute("SELECT artist_id FROM artists")
+    return {row[0] for row in cursor.fetchall()}
+
+
+# ============================================================================
+# Spotify API Download Functions (unchanged)
+# ============================================================================
 
 def get_user_library(sp, most_recent_track=None):
     print("Starting to download metadata of songs in library")
@@ -103,85 +206,135 @@ def get_artists_metadata(sp, artist_id_set):
     return metadata
 
 
-def load_json_file(file_path):
-    try:
-        with open(file_path, "r") as json_f:
-            return json.load(json_f)
-    except FileNotFoundError:
-        return None
-
-
 def main(args):
-    """Entry point"""
+    """Entry point - downloads Spotify data and saves to SQLite database."""
+    print(f"="*60)
+    print("MySpotify Library Downloader - Direct to SQLite")
+    print(f"="*60)
     print(f"Starting script with the following arguments:")
     print(args)
 
-    print("Asking for authorization from user (if this is the first time)")
+    # Get database path from args or use default
+    db_path = args.get("--db-path") or DEFAULT_DB_PATH
+    username = args["<client_username>"]
+
+    print("\nAuthenticating with Spotify (if this is the first time)")
     sp = spotipy.Spotify(
         auth_manager=SpotifyOAuth(
             scope="user-library-read",
-            username=args["<client_username>"],
+            username=username,
             redirect_uri=args["<redirect_uri>"],
             client_id=args["<client_id>"],
             client_secret=args["<client_secret>"],
         )
     )
 
-    user_library_path = f"./assets/user_library_{args['<client_username>']}.json"
-    audio_features_path = f"./assets/audio_features_{args['<client_username>']}.json"
-    artists_metadata_path = f"./assets/artists_metadata_{args['<client_username>']}.json"
-    if args["--regenerate"]:
-        print("Downloading ALL liked tracks!")
-        track_list = get_user_library(sp)
+    # Connect to database
+    conn = None
+    try:
+        conn = get_or_create_connection(db_path)
 
-        print("Skipping audio features download (Spotify API deprecated). Using existing data.")
-        audio_features = load_json_file(audio_features_path) or []
+        if args["--regenerate"]:
+            print("\n" + "="*60)
+            print("MODE: Full regeneration (download ALL tracks)")
+            print("="*60)
 
-        print("Downloading metadata of artist linked to tracks downloaded.")
-        artists_metadata = get_artists_metadata(sp, get_artist_id_set_from_tracks(track_list))
-    else:
-        print("Downloading liked tracks not downloaded before.")
-        downloaded_tracks = load_json_file(user_library_path)
-        most_recent_track = downloaded_tracks[0]
+            track_list = get_user_library(sp)
 
-        new_tracks = get_user_library(sp, most_recent_track)
-        if not new_tracks:
-            print("Found no new liked tracks. Stopping script early!")
-            return
+            print("\nSkipping audio features download (Spotify API deprecated)")
+            audio_features = []  # Will be empty in database
 
-        print(f"Found {len(new_tracks)} new liked tracks")
-        track_list = new_tracks + downloaded_tracks
+            print("\nDownloading metadata of all artists linked to tracks...")
+            artists_metadata = get_artists_metadata(sp, get_artist_id_set_from_tracks(track_list))
 
-        print("Skipping audio features download (Spotify API deprecated). Using existing data.")
-        downloaded_features = load_json_file(audio_features_path)
-        audio_features = downloaded_features or []
-
-        print("Downloading metadata of new artists linked to tracks downloaded.")
-        downloaded_artists_metadata = load_json_file(artists_metadata_path)
-        downloaded_ids = {artist["id"] for artist in downloaded_artists_metadata}
-
-        new_ids = get_artist_id_set_from_tracks(new_tracks)
-        new_artists_only = new_ids - downloaded_ids
-
-        if new_artists_only:
-            print(f"Found {len(new_artists_only)} new artists. Proceeding to download their metadata")
-            new_artists_metadata = get_artists_metadata(sp, new_artists_only)
-            artists_metadata = new_artists_metadata + downloaded_artists_metadata
         else:
-            print(f"No new artists found. No metadata to download.")
-            artists_metadata = downloaded_artists_metadata
+            print("\n" + "="*60)
+            print("MODE: Incremental download (only new tracks)")
+            print("="*60)
 
-    print(f"Saving {len(track_list)} tracks to {user_library_path}")
-    with open(user_library_path, "w") as json_f:
-        json.dump(track_list, json_f)
+            # Query database for most recent track instead of loading JSON
+            print("\nChecking database for most recent track...")
+            most_recent_track = get_most_recent_track_from_db(conn, username)
 
-    print(f"Saving {len(audio_features)} features to {audio_features_path}")
-    with open(audio_features_path, "w") as json_f:
-        json.dump(audio_features, json_f)
+            if most_recent_track:
+                print(f"  Found most recent track: {most_recent_track['track']['id']} (added {most_recent_track['added_at']})")
+            else:
+                print("  No existing tracks found. Downloading all tracks...")
 
-    print(f"Saving metadata of {len(artists_metadata)} artists to {artists_metadata_path}")
-    with open(artists_metadata_path, "w") as json_f:
-        json.dump(artists_metadata, json_f)
+            new_tracks = get_user_library(sp, most_recent_track)
+            if not new_tracks:
+                print("\n✓ No new liked tracks found. Database is up to date!")
+                return
+
+            print(f"\nFound {len(new_tracks)} new liked tracks")
+            track_list = new_tracks
+            audio_features = []  # No audio features (API deprecated)
+
+            # Query existing artists from database
+            print("\nChecking database for existing artists...")
+            existing_artist_ids = get_existing_artist_ids(conn)
+            print(f"  Found {len(existing_artist_ids)} existing artists in database")
+
+            new_artist_ids = get_artist_id_set_from_tracks(new_tracks)
+            new_artists_only = new_artist_ids - existing_artist_ids
+
+            if new_artists_only:
+                print(f"\nDownloading metadata for {len(new_artists_only)} new artists")
+                artists_metadata = get_artists_metadata(sp, new_artists_only)
+            else:
+                print("\nNo new artists found. Skipping artist metadata download.")
+                artists_metadata = []
+
+        # Insert into database (within transaction)
+        print("\n" + "="*60)
+        print("Saving data to database...")
+        print("="*60)
+
+        conn.execute("BEGIN TRANSACTION")
+
+        print(f"\nInserting {len(artists_metadata)} artists (using INSERT OR IGNORE)...")
+        inserted_artists = insert_artists(conn, artists_metadata)
+        print(f"  Inserted {inserted_artists} new artists (skipped {len(artists_metadata) - inserted_artists} duplicates)")
+
+        print(f"\nInserting tracks from {len(track_list)} library entries (using INSERT OR IGNORE)...")
+        inserted_tracks = insert_tracks(conn, track_list)
+        print(f"  Inserted {inserted_tracks} new tracks (skipped {len(track_list) - inserted_tracks} duplicates)")
+
+        print("\nInserting track-artist relationships (using INSERT OR IGNORE)...")
+        inserted_track_artists = insert_track_artists(conn, track_list)
+        print(f"  Inserted {inserted_track_artists} new track-artist relationships")
+
+        if audio_features:
+            valid_features = [f for f in audio_features if f is not None]
+            print(f"\nInserting {len(valid_features)} audio features (using INSERT OR IGNORE)...")
+            inserted_features = insert_audio_features(conn, audio_features)
+            print(f"  Inserted {inserted_features} new audio features")
+        else:
+            print("\nSkipping audio features (none available)")
+
+        print(f"\nInserting {len(track_list)} user_tracks entries for user {username}...")
+        inserted_user_tracks = insert_user_tracks(conn, username, track_list)
+        print(f"  Inserted {inserted_user_tracks} new user_tracks entries (skipped {len(track_list) - inserted_user_tracks} duplicates)")
+
+        conn.commit()
+
+        print("\n" + "="*60)
+        print(f"✓✓✓ Download completed successfully! ✓✓✓")
+        print("="*60)
+        print(f"✓ Saved {len(track_list)} tracks to database: {db_path}")
+        print(f"✓ User: {username}")
+        print("="*60)
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"\n✗ ERROR: Download failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 
 if __name__ == "__main__":
