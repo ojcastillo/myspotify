@@ -13,6 +13,7 @@ All inserts use INSERT OR IGNORE for automatic deduplication across users.
 """
 
 import json
+import os
 import sqlite3
 
 
@@ -137,6 +138,7 @@ CREATE INDEX IF NOT EXISTS idx_user_tracks_track ON user_tracks(track_id);
 # Schema Creation Functions
 # ============================================================================
 
+
 def create_schema(conn):
     """
     Create all tables with indexes.
@@ -176,6 +178,7 @@ def create_schema(conn):
 # Insert Functions (All use INSERT OR IGNORE for deduplication)
 # ============================================================================
 
+
 def insert_artists(conn, artists_data):
     """
     Insert artist metadata using INSERT OR IGNORE for deduplication.
@@ -191,22 +194,25 @@ def insert_artists(conn, artists_data):
     inserted = 0
 
     for artist in artists_data:
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO artists (
                 artist_id, artist_name, popularity, followers_total,
                 genres, artist_uri, artist_href, artist_spotify_url, images
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            artist['id'],
-            artist['name'],
-            artist.get('popularity'),
-            artist.get('followers', {}).get('total'),
-            json.dumps(artist.get('genres', [])),
-            artist.get('uri'),
-            artist.get('href'),
-            artist.get('external_urls', {}).get('spotify'),
-            json.dumps(artist.get('images', []))
-        ))
+        """,
+            (
+                artist["id"],
+                artist["name"],
+                artist.get("popularity"),
+                artist.get("followers", {}).get("total"),
+                json.dumps(artist.get("genres", [])),
+                artist.get("uri"),
+                artist.get("href"),
+                artist.get("external_urls", {}).get("spotify"),
+                json.dumps(artist.get("images", [])),
+            ),
+        )
         if cursor.rowcount > 0:
             inserted += 1
 
@@ -229,13 +235,14 @@ def insert_tracks(conn, library_data):
     inserted = 0
 
     for item in library_data:
-        track = item['track']
-        album = track['album']
+        track = item["track"]
+        album = track["album"]
 
         # Extract first artist ID for foreign key
-        first_artist_id = track['artists'][0]['id']
+        first_artist_id = track["artists"][0]["id"]
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO tracks (
                 track_id, track_name, track_duration_ms,
                 track_popularity, track_explicit, track_is_local,
@@ -247,35 +254,37 @@ def insert_tracks(conn, library_data):
                 album_images, album_artists, track_artists,
                 first_artist_id, available_markets
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            track['id'],
-            track['name'],
-            track['duration_ms'],
-            track.get('popularity'),
-            1 if track.get('explicit') else 0,
-            1 if track.get('is_local') else 0,
-            track.get('disc_number'),
-            track.get('track_number'),
-            track.get('uri'),
-            track.get('href'),
-            track.get('external_urls', {}).get('spotify'),
-            track.get('preview_url'),
-            track.get('external_ids', {}).get('isrc'),
-            album['id'],
-            album['name'],
-            album.get('album_type'),
-            album.get('release_date'),
-            album.get('release_date_precision'),
-            album.get('total_tracks'),
-            album.get('uri'),
-            album.get('href'),
-            album.get('external_urls', {}).get('spotify'),
-            json.dumps(album.get('images', [])),
-            json.dumps(album.get('artists', [])),
-            json.dumps(track.get('artists', [])),
-            first_artist_id,
-            json.dumps(track.get('available_markets', []))
-        ))
+        """,
+            (
+                track["id"],
+                track["name"],
+                track["duration_ms"],
+                track.get("popularity"),
+                1 if track.get("explicit") else 0,
+                1 if track.get("is_local") else 0,
+                track.get("disc_number"),
+                track.get("track_number"),
+                track.get("uri"),
+                track.get("href"),
+                track.get("external_urls", {}).get("spotify"),
+                track.get("preview_url"),
+                track.get("external_ids", {}).get("isrc"),
+                album["id"],
+                album["name"],
+                album.get("album_type"),
+                album.get("release_date"),
+                album.get("release_date_precision"),
+                album.get("total_tracks"),
+                album.get("uri"),
+                album.get("href"),
+                album.get("external_urls", {}).get("spotify"),
+                json.dumps(album.get("images", [])),
+                json.dumps(album.get("artists", [])),
+                json.dumps(track.get("artists", [])),
+                first_artist_id,
+                json.dumps(track.get("available_markets", [])),
+            ),
+        )
         if cursor.rowcount > 0:
             inserted += 1
 
@@ -298,14 +307,17 @@ def insert_track_artists(conn, library_data):
     inserted = 0
 
     for item in library_data:
-        track_id = item['track']['id']
-        artists = item['track']['artists']
+        track_id = item["track"]["id"]
+        artists = item["track"]["artists"]
 
         for position, artist in enumerate(artists):
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR IGNORE INTO track_artists (track_id, artist_id, artist_position)
                 VALUES (?, ?, ?)
-            """, (track_id, artist['id'], position))
+            """,
+                (track_id, artist["id"], position),
+            )
             if cursor.rowcount > 0:
                 inserted += 1
 
@@ -333,31 +345,34 @@ def insert_audio_features(conn, features_data):
     inserted = 0
 
     for features in valid_features:
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO audio_features (
                 track_id, danceability, energy, key, loudness, mode,
                 speechiness, acousticness, instrumentalness, liveness,
                 valence, tempo, time_signature, duration_ms,
                 track_href, analysis_url
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            features['id'],
-            features.get('danceability'),
-            features.get('energy'),
-            features.get('key'),
-            features.get('loudness'),
-            features.get('mode'),
-            features.get('speechiness'),
-            features.get('acousticness'),
-            features.get('instrumentalness'),
-            features.get('liveness'),
-            features.get('valence'),
-            features.get('tempo'),
-            features.get('time_signature'),
-            features.get('duration_ms'),
-            features.get('track_href'),
-            features.get('analysis_url')
-        ))
+        """,
+            (
+                features["id"],
+                features.get("danceability"),
+                features.get("energy"),
+                features.get("key"),
+                features.get("loudness"),
+                features.get("mode"),
+                features.get("speechiness"),
+                features.get("acousticness"),
+                features.get("instrumentalness"),
+                features.get("liveness"),
+                features.get("valence"),
+                features.get("tempo"),
+                features.get("time_signature"),
+                features.get("duration_ms"),
+                features.get("track_href"),
+                features.get("analysis_url"),
+            ),
+        )
         if cursor.rowcount > 0:
             inserted += 1
 
@@ -384,14 +399,51 @@ def insert_user_tracks(conn, username, library_data):
     inserted = 0
 
     for item in library_data:
-        track_id = item['track']['id']
-        added_at = item['added_at']
+        track_id = item["track"]["id"]
+        added_at = item["added_at"]
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO user_tracks (user_id, track_id, added_at)
             VALUES (?, ?, ?)
-        """, (username, track_id, added_at))
+        """,
+            (username, track_id, added_at),
+        )
         inserted += cursor.rowcount
 
     conn.commit()
     return inserted
+
+
+# ============================================================================
+# Query Functions
+# ============================================================================
+
+USER_DISPLAY_NAMES = {
+    "1266569549": "orlando",
+    "1137012579": "yasmin",
+}
+
+
+def get_available_users(db_path="./assets/spotify_data.db"):
+    """
+    Query distinct user IDs from the database and return with display names.
+
+    Args:
+        db_path: Path to the SQLite database
+
+    Returns:
+        List of dicts with 'user_id' and 'display_name' keys,
+        or empty list if database doesn't exist.
+    """
+    if not os.path.exists(db_path):
+        return []
+
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT user_id FROM user_tracks")
+        rows = cursor.fetchall()
+        return [{"user_id": row[0], "display_name": USER_DISPLAY_NAMES.get(row[0], row[0])} for row in rows]
+    finally:
+        conn.close()

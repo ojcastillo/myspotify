@@ -40,24 +40,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Core Application Structure
 - **Flask + Dash hybrid**: Flask handles OAuth authentication, Dash provides the interactive UI
-- **Singleton pattern**: Both SpotifyClientSingleton and DataSingleton use singleton pattern for shared state
+- **Module-level caching**: `load_data(user_ids)` caches DataFrames by user selection; SpotifyClientSingleton uses singleton pattern
+- **Optional auth**: Spotify OAuth is only required for playlist creation, not for browsing data
 - **Session-based auth**: Uses Flask sessions with filesystem storage for Spotify OAuth tokens
 
 ### Key Components
 
 #### Authentication Flow (src/app.py)
-1. Root route `/` handles Spotify OAuth (sign in, callback, token validation)
-2. Successful auth redirects to `/dash` for the main application
-3. SpotifyClientSingleton is initialized with auth manager and cache handler
+1. Root route `/` redirects directly to `/dash` (no auth required to browse)
+2. `/auth` route handles Spotify OAuth (sign in, callback, token validation)
+3. Successful auth at `/auth` initializes SpotifyClientSingleton and redirects to `/dash`
+4. Playlist creation in library page checks for auth and shows warning with link to `/auth` if not authenticated
 
 #### Data Layer (src/common/)
-- **DataSingleton**: Loads and processes user library, audio features, and artist metadata
+- **`load_data(user_ids)`**: Loads and processes user library, audio features, and artist metadata
+  - Accepts a list of user IDs, supports multi-user merged views with deduplication
+  - Module-level cache keyed by `frozenset(user_ids)` avoids redundant reads
   - **Primary source**: SQLite database (`./assets/spotify_data.db`) if available
-  - **Fallback**: JSON files in `./assets/` directory (for backward compatibility)
+  - **Fallback**: JSON files in `./assets/` directory (single-user only)
   - Automatically detects and uses appropriate data source
 - **db_helpers**: Shared database module for SQLite operations
   - Schema creation SQL constants
   - Insert functions with automatic deduplication (INSERT OR IGNORE)
+  - `get_available_users()` queries distinct users from database with display names
+  - `USER_DISPLAY_NAMES` maps user IDs to friendly names
   - Used by both download_library.py and migrate_json_to_sqlite.py
   - Eliminates code duplication across scripts
 - **SpotifyClientSingleton**: Manages Spotify API client and playlist creation
@@ -65,16 +71,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 #### UI Layer (src/pages/)
 - **library.py**: Main interactive table for browsing/filtering tracks and creating playlists
-- **home.py**: Dashboard/home page
+- **home.py**: Dashboard/home page with stats and charts
+- Both pages are callback-driven, reactive to `selected-users-store` (user selector in navbar)
 - Uses Dash DataTable with filtering, sorting, and multi-select capabilities
 
 ### Data Flow
 
 **Current Workflow (Phase 3+):**
 1. Download script fetches data from Spotify API → writes directly to SQLite database
-2. DataSingleton loads data from SQLite and merges into pandas DataFrame
-3. Library page displays interactive table for playlist creation
-4. SpotifyClientSingleton creates playlists via Spotify API
+2. `load_data(user_ids)` loads data from SQLite and merges into pandas DataFrame (supports multi-user)
+3. Navbar user selector drives page content via `dcc.Store` → callbacks
+4. Library page displays interactive table for playlist creation (requires Spotify auth via `/auth`)
+5. SpotifyClientSingleton creates playlists via Spotify API
 
 **Legacy Workflow (before Phase 3):**
 1. Download script → JSON files → Migration script → SQLite database
@@ -90,9 +98,9 @@ SQLite Database (./assets/spotify_data.db)
     ├── Global tables: tracks, artists, audio_features, track_artists
     └── User-specific: user_tracks (links users to their tracks)
     ↓
-DataSingleton._read_from_sqlite()
+load_data(user_ids) / _read_from_sqlite_multi()
     ↓
-Pandas DataFrame (merged data for specific user)
+Pandas DataFrame (merged data for selected users)
     ↓
 Flask/Dash UI (library.py, home.py)
 ```
@@ -138,9 +146,9 @@ The database module provides reusable functions for both download and migration 
 ### Environment Variables Required
 ```
 SPOTIPY_CLIENT_ID
-SPOTIPY_CLIENT_SECRET  
-SPOTIPY_REDIRECT_URI
-SPOTIPY_CLIENT_USERNAME
+SPOTIPY_CLIENT_SECRET
+SPOTIPY_REDIRECT_URI          # Must point to /auth (e.g., http://127.0.0.1:5000/auth)
+SPOTIPY_CLIENT_USERNAME        # Only needed for download script, not for the Flask app
 ```
 
 ### File Naming Conventions
