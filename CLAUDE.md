@@ -11,7 +11,7 @@
 | Stats/charts dashboard | `src/pages/home.py` |
 | Download script (Spotify API → SQLite) | `bin/download_library.py` |
 | One-time legacy JSON → SQLite migration | `bin/migrate_json_to_sqlite.py` |
-| DB schema, data flow, auth flow, migration history | `docs/architecture.md` |
+| DB schema, data flow, auth flow, migration history | `ARCHITECTURE.md` |
 
 ## Development Commands
 
