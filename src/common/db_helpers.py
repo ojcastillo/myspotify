@@ -440,12 +440,6 @@ def insert_user_tracks(conn, username, library_data):
 # Query Functions
 # ============================================================================
 
-USER_DISPLAY_NAMES = {
-    "1266569549": "orlando",
-    "1137012579": "yasmin",
-}
-
-
 def add_allowed_user(conn, spotify_user_id, display_name):
     """Insert or replace a user in the allowed_users table."""
     cursor = conn.cursor()
@@ -497,14 +491,14 @@ def get_user_token(conn, spotify_user_id):
 
 def get_available_users(db_path="./assets/spotify_data.db"):
     """
-    Query distinct user IDs from the database and return with display names.
+    Return users who have tracks in the DB, with display names from allowed_users.
 
     Args:
         db_path: Path to the SQLite database
 
     Returns:
-        List of dicts with 'user_id' and 'display_name' keys,
-        or empty list if database doesn't exist.
+        List of dicts with 'user_id' and 'display_name' keys.
+        Falls back to user_id as display_name if not in allowed_users.
     """
     if not os.path.exists(db_path):
         return []
@@ -512,8 +506,12 @@ def get_available_users(db_path="./assets/spotify_data.db"):
     conn = sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT user_id FROM user_tracks")
+        cursor.execute("""
+            SELECT ut.user_id, COALESCE(au.display_name, ut.user_id) AS display_name
+            FROM (SELECT DISTINCT user_id FROM user_tracks) ut
+            LEFT JOIN allowed_users au ON au.spotify_user_id = ut.user_id
+        """)
         rows = cursor.fetchall()
-        return [{"user_id": row[0], "display_name": USER_DISPLAY_NAMES.get(row[0], row[0])} for row in rows]
+        return [{"user_id": row[0], "display_name": row[1]} for row in rows]
     finally:
         conn.close()

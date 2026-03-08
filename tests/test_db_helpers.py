@@ -61,3 +61,61 @@ def test_save_user_token_upserts(db):
 
 def test_get_user_token_returns_none_for_unknown(db):
     assert get_user_token(db, "nobody") is None
+
+
+from common.db_helpers import get_available_users
+
+
+def test_get_available_users_returns_empty_when_no_data(db_path):
+    # No users in allowed_users or user_tracks → empty list
+    result = get_available_users(db_path)
+    assert result == []
+
+
+def test_get_available_users_uses_allowed_users_display_name(db_path):
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    from common.db_helpers import add_allowed_user
+    add_allowed_user(conn, "111", "alice")
+    # Insert a user_tracks row directly
+    conn.execute(
+        "INSERT OR IGNORE INTO user_tracks (user_id, track_id, added_at) VALUES (?, ?, ?)",
+        ("111", "fake_track_id", "2024-01-01T00:00:00"),
+    )
+    # Need a track row for the FK to work — insert a minimal one
+    conn.execute(
+        """INSERT OR IGNORE INTO artists (artist_id, artist_name) VALUES ('a1', 'Artist')"""
+    )
+    conn.execute(
+        """INSERT OR IGNORE INTO tracks
+           (track_id, track_name, track_duration_ms, album_id, album_name, track_artists, first_artist_id)
+           VALUES ('fake_track_id', 'T', 1000, 'alb1', 'Album', '[]', 'a1')"""
+    )
+    conn.commit()
+    conn.close()
+
+    result = get_available_users(db_path)
+    assert len(result) == 1
+    assert result[0]["user_id"] == "111"
+    assert result[0]["display_name"] == "alice"
+
+
+def test_get_available_users_falls_back_to_user_id_when_not_in_allowed(db_path):
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    conn.execute("INSERT OR IGNORE INTO artists (artist_id, artist_name) VALUES ('a1', 'Artist')")
+    conn.execute(
+        """INSERT OR IGNORE INTO tracks
+           (track_id, track_name, track_duration_ms, album_id, album_name, track_artists, first_artist_id)
+           VALUES ('fake_track_id', 'T', 1000, 'alb1', 'Album', '[]', 'a1')"""
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO user_tracks (user_id, track_id, added_at) VALUES ('999', 'fake_track_id', '2024-01-01')"
+    )
+    conn.commit()
+    conn.close()
+
+    result = get_available_users(db_path)
+    assert len(result) == 1
+    assert result[0]["user_id"] == "999"
+    assert result[0]["display_name"] == "999"  # falls back to user_id
