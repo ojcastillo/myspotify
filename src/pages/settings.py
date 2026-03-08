@@ -105,12 +105,16 @@ def layout():
 
 @callback(
     Output({"type": "sync-status", "index": dash.ALL}, "children"),
+    Output({"type": "sync-btn", "index": dash.ALL}, "disabled"),
     Input("settings-poll", "n_intervals"),
     State({"type": "sync-status", "index": dash.ALL}, "id"),
+    State({"type": "sync-btn", "index": dash.ALL}, "id"),
     prevent_initial_call=True,
 )
-def poll_sync_status(n, ids):
-    return [_sync_status.get(i["index"], "") for i in ids]
+def poll_sync_status(n, status_ids, btn_ids):
+    statuses = [_sync_status.get(i["index"], "") for i in status_ids]
+    disabled = [_sync_status.get(i["index"]) == "Syncing..." for i in btn_ids]
+    return statuses, disabled
 
 
 @callback(

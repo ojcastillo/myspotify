@@ -12,6 +12,7 @@ from random import randint
 from time import sleep
 
 import spotipy
+from spotipy.cache_handler import MemoryCacheHandler
 from spotipy.oauth2 import SpotifyOAuth
 
 from common.db_helpers import (
@@ -25,10 +26,10 @@ from common.db_helpers import (
 
 
 def _build_spotify_client(token_info):
-    """Build a Spotify client from stored token info dict."""
-    auth_manager = SpotifyOAuth(scope="user-library-read")
-    auth_manager.token_info = token_info
-    return spotipy.Spotify(auth=token_info["access_token"])
+    """Build a Spotify client from stored token info dict, with token refresh support."""
+    cache_handler = MemoryCacheHandler(token_info=token_info)
+    auth_manager = SpotifyOAuth(scope="user-library-read", cache_handler=cache_handler, open_browser=False)
+    return spotipy.Spotify(auth_manager=auth_manager)
 
 
 def _get_most_recent_track(conn, user_id):
