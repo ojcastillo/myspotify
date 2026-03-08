@@ -1,14 +1,40 @@
+import datetime
 import os
+import sqlite3
 
 import dash
 import dash_bootstrap_components as dbc
 import spotipy
+from dotenv import load_dotenv
 from flask import Flask, session, request, redirect
 from flask_session import Session
 
 from common.cache import FlaskSessionCacheHandler
 from common.db_helpers import get_available_users
 from common.spotify import SpotifyClientSingleton
+
+load_dotenv()
+
+DB_PATH = "./assets/spotify_data.db"
+
+
+def is_user_allowed(conn, spotify_user_id):
+    """Check if spotify_user_id exists in allowed_users table."""
+    from common.db_helpers import get_allowed_user
+    return get_allowed_user(conn, spotify_user_id) is not None
+
+
+def persist_token(conn, spotify_user_id, token_info):
+    """Save OAuth token info to user_tokens table."""
+    from common.db_helpers import save_user_token
+    expiry = datetime.datetime.utcfromtimestamp(token_info["expires_at"]).isoformat() if token_info.get("expires_at") else None
+    save_user_token(
+        conn,
+        spotify_user_id=spotify_user_id,
+        access_token=token_info["access_token"],
+        refresh_token=token_info.get("refresh_token"),
+        token_expiry=expiry,
+    )
 
 
 # Marker: APP_CREATION_STARTS #
@@ -106,14 +132,27 @@ def auth():
     )
 
     if request.args.get("code"):
-        # Being redirected from Spotify auth page
         auth_manager.get_access_token(request.args.get("code"))
         return redirect("/auth")
 
     if not auth_manager.validate_token(cache_handler.get_cached_token()):
-        # Display sign in link when no token
         auth_url = auth_manager.get_authorize_url()
         return f'<h2><a href="{auth_url}">Sign in</a></h2>'
+
+    # Token is valid — get the Spotify user ID and check allowlist
+    sp = spotipy.Spotify(auth_manager=auth_manager)
+    spotify_user_id = sp.current_user()["id"]
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        if not is_user_allowed(conn, spotify_user_id):
+            session.pop("token_info", None)
+            return f"<h2>Access denied: user {spotify_user_id} is not registered.</h2>", 403
+
+        token_info = cache_handler.get_cached_token()
+        persist_token(conn, spotify_user_id, token_info)
+    finally:
+        conn.close()
 
     # Signed in - Setup Spotify singleton and redirect to dash app
     spotify_singleton = SpotifyClientSingleton()
