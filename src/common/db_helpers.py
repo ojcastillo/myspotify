@@ -440,6 +440,9 @@ def insert_user_tracks(conn, username, library_data):
 # Query Functions
 # ============================================================================
 
+DEFAULT_DB_PATH = "./assets/spotify_data.db"
+
+
 def add_allowed_user(conn, spotify_user_id, display_name):
     """Insert or replace a user in the allowed_users table."""
     cursor = conn.cursor()

@@ -10,23 +10,21 @@ from flask import Flask, session, request, redirect
 from flask_session import Session
 
 from common.cache import FlaskSessionCacheHandler
-from common.db_helpers import get_available_users
+from common.db_helpers import DEFAULT_DB_PATH, get_allowed_user, get_available_users, save_user_token
 from common.spotify import SpotifyClientSingleton
 
 load_dotenv()
 
-DB_PATH = "./assets/spotify_data.db"
+DB_PATH = DEFAULT_DB_PATH
 
 
 def is_user_allowed(conn, spotify_user_id):
     """Check if spotify_user_id exists in allowed_users table."""
-    from common.db_helpers import get_allowed_user
     return get_allowed_user(conn, spotify_user_id) is not None
 
 
 def persist_token(conn, spotify_user_id, token_info):
     """Save OAuth token info to user_tokens table."""
-    from common.db_helpers import save_user_token
     expiry = datetime.datetime.utcfromtimestamp(token_info["expires_at"]).isoformat() if token_info.get("expires_at") else None
     save_user_token(
         conn,

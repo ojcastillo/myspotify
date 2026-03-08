@@ -3,11 +3,9 @@ Core library sync logic for MySpotify.
 
 Called by both bin/download_library.py (CLI) and the settings page (in-app sync).
 """
-import datetime
 import json
-import sqlite3
-import sys
 import os
+import sqlite3
 from random import randint
 from time import sleep
 

@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import threading
 
@@ -5,9 +6,11 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html, dcc, Input, Output, State, callback
 
+from common.db_helpers import DEFAULT_DB_PATH
+
 dash.register_page(__name__, path="/settings", name="Settings")
 
-DB_PATH = "./assets/spotify_data.db"
+DB_PATH = DEFAULT_DB_PATH
 
 # Track sync status per user in memory (good enough for single-server local use)
 _sync_status = {}
@@ -15,7 +18,7 @@ _sync_status = {}
 
 def get_users_with_status():
     """Return list of user dicts with sync metadata for the settings table."""
-    if not __import__("os").path.exists(DB_PATH):
+    if not os.path.exists(DB_PATH):
         return []
 
     conn = sqlite3.connect(DB_PATH)
