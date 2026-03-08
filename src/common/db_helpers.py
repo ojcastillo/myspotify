@@ -12,6 +12,7 @@ Database Design:
 All inserts use INSERT OR IGNORE for automatic deduplication across users.
 """
 
+import datetime
 import json
 import os
 import sqlite3
@@ -133,6 +134,24 @@ CREATE INDEX IF NOT EXISTS idx_user_tracks_added_at ON user_tracks(user_id, adde
 CREATE INDEX IF NOT EXISTS idx_user_tracks_track ON user_tracks(track_id);
 """
 
+CREATE_ALLOWED_USERS_TABLE = """
+CREATE TABLE IF NOT EXISTS allowed_users (
+    spotify_user_id TEXT PRIMARY KEY,
+    display_name    TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+"""
+
+CREATE_USER_TOKENS_TABLE = """
+CREATE TABLE IF NOT EXISTS user_tokens (
+    spotify_user_id TEXT PRIMARY KEY,
+    access_token    TEXT NOT NULL,
+    refresh_token   TEXT,
+    token_expiry    TEXT,
+    FOREIGN KEY (spotify_user_id) REFERENCES allowed_users(spotify_user_id)
+);
+"""
+
 
 # ============================================================================
 # Schema Creation Functions
@@ -164,6 +183,8 @@ def create_schema(conn):
     cursor.executescript(CREATE_AUDIO_FEATURES_TABLE)
     cursor.executescript(CREATE_TRACK_ARTISTS_TABLE)
     cursor.executescript(CREATE_USER_TRACKS_TABLE)
+    cursor.executescript(CREATE_ALLOWED_USERS_TABLE)
+    cursor.executescript(CREATE_USER_TOKENS_TABLE)
 
     # Create indexes
     cursor.executescript(CREATE_ARTISTS_INDEXES)
@@ -419,22 +440,68 @@ def insert_user_tracks(conn, username, library_data):
 # Query Functions
 # ============================================================================
 
-USER_DISPLAY_NAMES = {
-    "1266569549": "orlando",
-    "1137012579": "yasmin",
-}
+DEFAULT_DB_PATH = "./assets/spotify_data.db"
+
+
+def add_allowed_user(conn, spotify_user_id, display_name):
+    """Insert or replace a user in the allowed_users table."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR REPLACE INTO allowed_users (spotify_user_id, display_name, created_at) VALUES (?, ?, ?)",
+        (spotify_user_id, display_name, datetime.datetime.utcnow().isoformat()),
+    )
+    conn.commit()
+
+
+def get_allowed_user(conn, spotify_user_id):
+    """Return a dict for the given user_id, or None if not found."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT spotify_user_id, display_name, created_at FROM allowed_users WHERE spotify_user_id = ?",
+        (spotify_user_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    return {"spotify_user_id": row[0], "display_name": row[1], "created_at": row[2]}
+
+
+def save_user_token(conn, spotify_user_id, access_token, refresh_token, token_expiry):
+    """Upsert OAuth token info for a user."""
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO user_tokens (spotify_user_id, access_token, refresh_token, token_expiry)
+        VALUES (?, ?, ?, ?)
+        """,
+        (spotify_user_id, access_token, refresh_token, token_expiry),
+    )
+    conn.commit()
+
+
+def get_user_token(conn, spotify_user_id):
+    """Return stored token dict for user, or None."""
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT spotify_user_id, access_token, refresh_token, token_expiry FROM user_tokens WHERE spotify_user_id = ?",
+        (spotify_user_id,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+    return {"spotify_user_id": row[0], "access_token": row[1], "refresh_token": row[2], "token_expiry": row[3]}
 
 
 def get_available_users(db_path="./assets/spotify_data.db"):
     """
-    Query distinct user IDs from the database and return with display names.
+    Return users who have tracks in the DB, with display names from allowed_users.
 
     Args:
         db_path: Path to the SQLite database
 
     Returns:
-        List of dicts with 'user_id' and 'display_name' keys,
-        or empty list if database doesn't exist.
+        List of dicts with 'user_id' and 'display_name' keys.
+        Falls back to user_id as display_name if not in allowed_users.
     """
     if not os.path.exists(db_path):
         return []
@@ -442,8 +509,12 @@ def get_available_users(db_path="./assets/spotify_data.db"):
     conn = sqlite3.connect(db_path)
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT user_id FROM user_tracks")
+        cursor.execute("""
+            SELECT ut.user_id, COALESCE(au.display_name, ut.user_id) AS display_name
+            FROM (SELECT DISTINCT user_id FROM user_tracks) ut
+            LEFT JOIN allowed_users au ON au.spotify_user_id = ut.user_id
+        """)
         rows = cursor.fetchall()
-        return [{"user_id": row[0], "display_name": USER_DISPLAY_NAMES.get(row[0], row[0])} for row in rows]
+        return [{"user_id": row[0], "display_name": row[1]} for row in rows]
     finally:
         conn.close()

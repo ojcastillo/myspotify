@@ -9,7 +9,10 @@
 | SQLite schema + insert helpers (shared by scripts) | `src/common/db_helpers.py` |
 | Library browser UI, playlist creation | `src/pages/library.py` |
 | Stats/charts dashboard | `src/pages/home.py` |
-| Download script (Spotify API → SQLite) | `bin/download_library.py` |
+| Sync logic (used by CLI + settings page) | `src/common/sync.py` |
+| Settings page with per-user sync button | `src/pages/settings.py` |
+| Add/register a user to allowed_users | `bin/add_user.py` |
+| Download script (thin CLI wrapper around sync.py) | `bin/download_library.py` |
 | One-time legacy JSON → SQLite migration | `bin/migrate_json_to_sqlite.py` |
 | DB schema, data flow, auth flow, migration history | `ARCHITECTURE.md` |
 
@@ -23,8 +26,7 @@ source .venv/bin/activate
 
 ### Running the Application
 ```bash
-sh bin/run_server.sh orlando          # Preferred (handles env vars)
-flask --app src/app.py --debug run    # Fallback (requires env vars set manually)
+flask --app src/app.py --debug run
 ```
 
 ### Code Quality
@@ -34,22 +36,29 @@ black .    # 120-char line length (pyproject.toml)
 
 ### Data Collection
 ```bash
-# Download/update library (incremental by default)
-./bin/download_library.py <username> <client_id> <client_secret> <redirect_uri>
-./bin/download_library.py <username> ... --regenerate    # Full refresh
-./bin/download_library.py <username> ... --db-path PATH  # Custom DB (for testing)
+# Add a user (run once per user)
+python bin/add_user.py <display_name> <spotify_user_id>
+# e.g.: python bin/add_user.py orlando 1266569549
+
+# Download/update library for a user (requires stored token from /auth)
+python bin/download_library.py <spotify_user_id>
+python bin/download_library.py <spotify_user_id> --regenerate   # Full refresh
+python bin/download_library.py <spotify_user_id> --db-path PATH  # Custom DB
 
 # Migrate legacy JSON files to SQLite (one-time only)
 python bin/migrate_json_to_sqlite.py <username> [--db-path PATH] [--verify]
 ```
 
 ## Environment Variables
+
+Copy `.env.example` to `.env` and fill in your Spotify app credentials:
 ```
-SPOTIPY_CLIENT_ID
-SPOTIPY_CLIENT_SECRET
-SPOTIPY_REDIRECT_URI      # Must point to /auth (e.g. http://127.0.0.1:5000/auth)
-SPOTIPY_CLIENT_USERNAME   # Only for download script, not the Flask app
+SPOTIPY_CLIENT_ID=...
+SPOTIPY_CLIENT_SECRET=...
+SPOTIPY_REDIRECT_URI=http://127.0.0.1:5000/auth
 ```
+
+`SPOTIPY_CLIENT_USERNAME` is no longer used.
 
 ## Important Notes & Gotchas
 
